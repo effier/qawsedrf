@@ -13,6 +13,7 @@ ua="Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gec
 url_opener=urllib2.build_opener()
 
 #soloevent related commands
+_qwer="pokefarm"
 _online="https://"+_qwer+".com/online"
 _user="https://"+_qwer+".com/user/"
 _interact="https://"+_qwer+".com/summary/interact"
@@ -29,7 +30,8 @@ _hatch2="https://"+_qwer+".com/summary/load"
 _movetofield="https://"+_qwer+".com/fields/movetofield"
 _shelter="https://"+_qwer+".com/shelter"
 _shelterload="https://"+_qwer+".com/shelter/load"
-_qwer="pokefarm"
+_daycare="https://"+_qwer+".com/daycare/"
+_explock="https://"+_qwer+".com/summary/toggleexplock"
 
 #data
 def randberry():
@@ -98,13 +100,13 @@ def getPopulation(user,sid):
         population+=int(box[i])
     if population >=3000 and population <4000:
         print "population is greater than 3000, so interaction is cut to 1/2."
-        population=population/2+500
+        population=population/2+1000
     elif population >=4000 and population <6000:
         print "population is greater than 4000, so interaction is cut to 1/3."
-        population=population/3+500
+        population=population/3+1000
     elif population >=6000:
         print "population is greater than 6000, so interaction is cut to 1/4."
-        population=population/4+500
+        population=population/4+1000
     elif population==0:
         print "population is 0, probably a seed or all fields are hidden."
     return population
@@ -127,7 +129,7 @@ def field(user,sid,coverage):
                 count+=1
             temp=""
             page+=1
-            time.sleep(5)
+            time.sleep(randint(2,5))
             print user+" | page #"+str(page)+" | pm #"+str(count)+"/"+str(population)+" | "+time.strftime("%H:%M:%S")+"\n"
             act=download(_interact,full,sid)
             if "false" in act:
@@ -160,15 +162,13 @@ def notice(sid):
         time.sleep(2)
     time.sleep(0.3)
 
-def checkInteracted(user,sid):
-    raw=download3(_interactions,sid)
-    raw2=raw.split('Reciprocated')[1]
-    interacted=re.findall(r'user/(.*?)" class="',raw2)
-    if user.upper() in (name.upper() for name in interacted):
-        return True
-    else:
-        print user+" has not been interacted today"
+def checkInteracted(ra):
+    clickcount=re.findall(r'clickcount_act_sent">(.*?)<',ra)[0].replace(",","")
+    if int(clickcount)==0:
         return False
+    else:
+        print "user has been interacted today | "+str(clickcount)+" "+time.strftime("%H:%M:%S")
+        return True
     
 def clickback(sid):
     raw=download3(_clickback,sid)
@@ -195,10 +195,11 @@ def clickback(sid):
         raw=download3(_online,sid)
         user=re.findall(r'"url":"(.*?)"', raw)
         randid=user[randint(0, len(user)-1)]
-        if checkInteracted(randid,sid) ==False:
-            userLink=_user+randid
+        userLink=_user+randid
+	raw2=download3(userLink,sid)
+        if checkInteracted(raw2)==False:
+            #userLink=_user+randid
             field(randid,sid,(randint(1,25)/100.0))
-            raw2=download3(userLink,sid)
             pm=re.findall(r'data-pid="(.*?)"', raw2)
             if len(pm)>0:
                 for j in range(0,(len(pm))):
@@ -209,7 +210,7 @@ def clickback(sid):
                 print "\n"
         else:
             print randid+" has been interacted already----- "
-        time.sleep(30)
+        time.sleep(5)
 
 def checkparty(sid,uid,hunt):
     print "---CHECKING PARTY START---"+time.strftime("%H:%M:%S")
@@ -240,6 +241,8 @@ def checkparty(sid,uid,hunt):
             download(_hatch,'{"id": "'+pm[k]+'"}',sid)
             download(_hatch2,'{"id": "'+pm[k]+'","smallberries":"true"}',sid)
             print "hatched: "+pm[k]+" "+time.strftime("%H:%M:%S")
+	    download(_explock,'{"id": "'+pm[k]+'"}',sid)
+	    print "explocked: "+pm[k]+" "+time.strftime("%H:%M:%S")
             movetofield(sid,uid,pm[k])
             adopt(sid,hunt)
         elif hatchable[k]=="pm":
@@ -251,20 +254,51 @@ def checkparty(sid,uid,hunt):
     print "---CHECKING PARTY END---"+time.strftime("%H:%M:%S")+"\n"
 
 def adopt(sid,hunt):
-    download3(_shelter,sid)
     adopted=False
     while adopted==False:
+        raw=download3(_daycare,sid)
+        dcid=re.findall(r'data-id="(.*?)"', raw)
+        dcadopt=[]
+        daycarelimit=0
+        if "reached the daily adoption limit" in raw:
+            daycarelimit=0
+        elif "more for free" in raw:
+            daycarelimit=re.findall(r'You may adopt (.*?) more for free', raw)[0]
+        else:
+            daycarelimit=6
+        if int(daycarelimit) > 0:
+            if hunt=="dexpm" or hunt=="dexegg":
+                dcadopt=dcid[randint(0,len(dcid)-1)]
+                print str(daycarelimit)+ " daycare adoptions left for today."+" "+time.strftime("%H:%M:%S")
+                download("https://pokefarm.com/daycare/adopt",'{"id": "'+dcadopt+'"}',sid)
+                data=data1+dcadopt+data2
+                download(_interact,data,sid)
+                print "adopted for dexegg "+time.strftime("%H:%M:%S")
+                adopted=True
+                break
+            else:
+                break
+        else:
+            print "Today's daycare adoption limit has used up."+" "+time.strftime("%H:%M:%S")
+            break
+    download3(_shelter,sid)
+    while adopted==False:
         raw=download(_shelterload,'{"flute": "first"}',sid)
+        if hunt !="dexpm":
+            raw=download(_shelterload,'{"flute": "black"}',sid)
+        else:
+            raw=download(_shelterload,'{}',sid)
         try:
             adoptionlimit=re.findall(r'Therefore, you have <b>(.*?) adoptions', raw)[0]
         except:
             adoptionlimit=re.findall(r'Therefore, you have <b>(.*?) adoption', raw)[0]
         if int(adoptionlimit) > 0:
-            print adoptionlimit+ " adoption left for today."+" "+time.strftime("%H:%M:%S")
+            print adoptionlimit+ " shelter adoption left for today."+" "+time.strftime("%H:%M:%S")
             info=raw.split('{"i')
             pmname=[]
             #pmstage=[]
             pmid=[]
+            pmimg=[]
             for i in range (1, len(info)):
                 #print info[i]
                 if re.findall(r'"name":"(.*?) \(', info[i]) ==[]:
@@ -272,6 +306,7 @@ def adopt(sid,hunt):
                 else:
                     pmname.append(re.findall(r'"name":"(.*?) \(', info[i])[0])       
                 pmid.append(re.findall(r'd":"(.*?)","stage"', info[i])[0])
+                pmimg.append(re.findall(r'pkmn/(.*?)","name', info[i])[0])
                 #pmstage.append(re.findall(r'stage":"(.*?)"', info[i])[0])
     ##        print pmname
     ##        print str(len(pmname))
@@ -285,6 +320,8 @@ def adopt(sid,hunt):
                             if pmname[j]=="Pok\\u00e9mon":
                                 download("https://"+_qwer+".com/shelter/getinfo",'{"id": "'+pmid[j]+'"}',sid)
                                 download("https://"+_qwer+".com/shelter/adopt",'{"id": "'+pmid[j]+'"}',sid)
+                                data=data1+pmid[j]+data2
+                                printdownload(_interact,data,sid)
                                 print "adopted for dexpm "+time.strftime("%H:%M:%S")
                                 adopted=True
                                 break
@@ -296,6 +333,8 @@ def adopt(sid,hunt):
                             if pmname[k]=="Egg":
                                 download("https://"+_qwer+".com/shelter/getinfo",'{"id": "'+pmid[k]+'"}',sid)
                                 download("https://"+_qwer+".com/shelter/adopt",'{"id": "'+pmid[k]+'"}',sid)
+                                data=data1+pmid[k]+data2
+                                printdownload(_interact,data,sid)
                                 print "adopted for dexegg "+time.strftime("%H:%M:%S")
                                 adopted=True
                                 break
@@ -304,22 +343,49 @@ def adopt(sid,hunt):
                 else:
                     if adopted==False:
                         for l in range (0,len(pmname)):
-                            if pmname[k]==hunt+" Egg":
+                            if hunt+" Egg" in pmname[l]:
                                 download("https://"+_qwer+".com/shelter/getinfo",'{"id": "'+pmid[l]+'"}',sid)
                                 download("https://"+_qwer+".com/shelter/adopt",'{"id": "'+pmid[l]+'"}',sid)
+                                data=data1+pmid[l]+data2
+                                download(_interact,data,sid)
+                                print "adopted for "+hunt+" "+time.strftime("%H:%M:%S")
+                                adopted=True
+                                break
+                            elif hunt=="vulpix_ice" and "Vulpix Egg" in pmname[l] and "b/y/1/6.png/t=1482399766" in pmimg[l]:
+                                download("https://"+_qwer+".com/shelter/getinfo",'{"id": "'+pmid[l]+'"}',sid)
+                                download("https://"+_qwer+".com/shelter/adopt",'{"id": "'+pmid[l]+'"}',sid)
+                                data=data1+pmid[l]+data2
+                                download(_interact,data,sid)
+                                print "adopted for "+hunt+" "+time.strftime("%H:%M:%S")
+                                adopted=True
+                                break
+                            elif hunt=="vulpix_fire" and "Vulpix Egg" in pmname[l] and "7/z/0.png/t=1478697860" in pmimg[l]:
+                                download("https://"+_qwer+".com/shelter/getinfo",'{"id": "'+pmid[l]+'"}',sid)
+                                download("https://"+_qwer+".com/shelter/adopt",'{"id": "'+pmid[l]+'"}',sid)
+                                data=data1+pmid[l]+data2
+                                download(_interact,data,sid)
                                 print "adopted for "+hunt+" "+time.strftime("%H:%M:%S")
                                 adopted=True
                                 break
                     else:
                         break
+	    time.sleep(randint(1,7))
+	    if hunt=="dexegg" or hunt=="dexpm":
+		antilog(sid)
         else:
-            print "Today's adoption limit has used up."+" "+time.strftime("%H:%M:%S")
-            if hunt=="dexegg":
+            print "Today's daycare and shelter adoption limits have all used up."+" "+time.strftime("%H:%M:%S")
+            if hunt=="dexegg" or hunt=="dexpm":
                 download3("https://"+_qwer+".com/lab",sid)
                 raw3=download("https://"+_qwer+".com/lab/eggs",'{"use_reloader": "false"}',sid)
                 if "false" in raw3:
                     print "can't reload lab egg page yet. "+time.strftime("%H:%M:%S")
-                    time.sleep(10)
+                    raw4=download("https://pokefarm.com/lab/eggs","{}",sid)
+		    key=re.findall(r'"targettime":(.*?),',raw4)[0]
+		    if adopted==False:
+                        download("https://"+_qwer+".com/lab/adopt",'{"egg": "'+str(0)+'", "key": "'+key+'"}',sid)
+                        print "adopted repeated egg "+time.strftime("%H:%M:%S")
+                        adopted=True
+                        break
                 else:
                     labegg=re.findall(r'"name":"(.*?)"',raw3)
                     key=re.findall(r'"targettime":(.*?),',raw3)[0]
@@ -332,6 +398,10 @@ def adopt(sid,hunt):
                                 break
                     else:
                         break
+	    else:
+		print hunt+"hunt going on, so lab adoption is ignored. "+time.strftime("%H:%M:%S")
+		adopted=True
+		break
 
 def movetofield(sid,uid,pmid):
     #download3("https://"+_qwer+".com/fields",sid)
@@ -343,7 +413,7 @@ def movetofield(sid,uid,pmid):
     fieldsize=[]
     for i in range (1, len(fieldinfo)):
         fieldname.append(re.findall(r'"name":"(.*?)"', fieldinfo[i])[0])      
-        fieldid.append(re.findall(r'd":(\d),', fieldinfo[i])[0])
+        fieldid.append(re.findall(r'd":(.*?),', fieldinfo[i])[0])
         fieldtype.append(re.findall(r'"type":"(.*?)"', fieldinfo[i])[0])
         fieldsize.append(re.findall(r'"count":(.*?)}', fieldinfo[i])[0])
 ##    print fieldname
@@ -356,7 +426,7 @@ def movetofield(sid,uid,pmid):
 ##    print str(len(fieldsize))
     for i in range (0,len(fieldsize)):
         if int(fieldsize[i])<40:
-            download(_movetofield,'{"id": "'+pmid+'","field":"'+fieldid[i]+'","getEmptySlot":"true"}',sid)
+            download(_movetofield,'{"id": "'+pmid+'","field":"'+str(i)+'","getEmptySlot":"true"}',sid)
             print "pmid: "+pmid+" is put into box name: "+fieldname[i]+" | box id: "+fieldid[i]+" "+time.strftime("%H:%M:%S")
             break
         else:
@@ -375,7 +445,7 @@ def antilog(sid):
                 postlink=[]
                 for i in range(1,len(post)/2):
                     postlink.append(post[i*2-1])
-                for j in range(0,randint(1,len(postlink)/2)):
+                for j in range(0,randint(1,len(postlink)/5)):
                     postname=postlink[randint(0,len(postlink)-1)]
                     print "visiting : "+postname+" "+time.strftime("%H:%M:%S")
                     download3(forumlink+postname,sid)
@@ -392,44 +462,45 @@ def checkinteraction(sid):
     print "Current interaction point is: "+str(todayact)+" "+time.strftime("%H:%M:%S")
     return int(todayact)
 #===================================================================================
-def main(sid,uid,hunt):
+def pkrs(sid,uid,hunt):
+    goal=10000
     while True:
-        try:
+	print "Script Started. "+time.strftime("%H:%M:%S")
+	try:
+	    if goal>=200000:
+                print "Goal is reset. "+time.strftime("%H:%M:%S")
+                goal=10000
+            else:
+                goal+=randint(20000,30000)
             raw=download3(_online,sid)
             user=re.findall(r'"url":"(.*?)"', raw)
             randid=user[randint(0, len(user)-1)]
-            if checkInteracted(randid,sid) ==False:
-                userLink=_user+randid
-                field(randid,sid,(randint(1,25)/100.0))
-                raw2=download3(userLink,sid)
+            userLink=_user+randid
+            raw2=download3(userLink,sid)
+            if checkInteracted(raw2)==False:
                 pm=re.findall(r'data-pid="(.*?)"', raw2)
                 if len(pm)>0:
                     for j in range(0,(len(pm))):
                         data=data1+pm[j]+data2
                         download(_interact,data,sid)
                         time.sleep(1)
-                    time.sleep(30)
-                    print "\n"
-                checkparty(sid,uid,hunt)
-                antilog(sid)
+                time.sleep(10)
+                print "\n"
             else:
                 print randid+" has been interacted already----- "
-        except:
+        except urllib2.HTTPError:
+            print "HTTPError! Maintainence or Internet Problem."
+            time.sleep(60*20)
             pass
-
-def pkrs(sid,uid,hunt):
-    while True:
-        goal=60000+randint(0,40000)
-        print "Today's interaction goal is: "+str(goal)
-        if checkinteraction(sid) <=goal:
+        while checkinteraction(sid) <=goal and checkinteraction(sid)<85000:
+	    print "Today's interaction goal is: "+str(goal)
             try:
                 userNow=getPkrs(sid)
-                if checkInteracted(userNow,sid) ==False:
-                    user=userNow
-                    print "current pkrs is "+user+"  "+time.strftime("%H:%M:%S")
-                    field(user,sid,0.95)
-                    userLink=_user+user
-                    raw2=download3(userLink,sid)
+		userLink=_user+userNow
+                raw2=download3(userLink,sid)
+                if checkInteracted(raw2) ==False:
+                    print "current pkrs is "+userNow+"  "+time.strftime("%H:%M:%S")
+                    field(userNow,sid,0.95)
                     pm=re.findall(r'data-pid="(.*?)"', raw2)
                     for j in range(0,(len(pm))):
                         data=data1+pm[j]+data2
@@ -448,78 +519,44 @@ def pkrs(sid,uid,hunt):
                     time.sleep(10)
             except:
                 print "Error! Probably PKRS is self."
-                clickback(sid)
-                antilog(sid)
-                checkparty(sid,uid,hunt)
-                time.sleep(10)
+		try:
+		    checkparty(sid,uid,hunt)
+                    clickback(sid)
+                    antilog(sid)
+                    checkparty(sid,uid,hunt)
+                    time.sleep(10)
+		except urllib2.HTTPError:
+		    print "HTTPError! Maintainence or Internet Problem."
+		    time.sleep(60*20)
+		    pass
                 pass
         else:
+            antilog(sid)
             checkinteraction(sid)
-            print "Sleep mode"+time.strftime("%H:%M:%S")
-            time.sleep(60*60*8)
-            
-
-def dailydalao(sid):
-    while True:
-        try:
-            user=daily[randint(0,len(daily)-1)]
-            if checkInteracted(user,sid) ==False:
-                print user+"  "+time.strftime("%H:%M:%S")
-                page=0
-                pm=[]
-                count=0
-                population=getPopulation(user,sid)
-                while count<(population*.95)and population !=0:
-                    raw=download(_field,data3+str(page)+data4+user+data5,sid)
-                    pm+=re.findall(r'data-id=\\"(.*?)\\"', raw)
-                    if len(pm)>0:
-                        print "currently on "+user+" Page: "+str(page+1)+" | "+time.strftime("%H:%M:%S")
-                        temp=""
-                        for i in range (0, len(pm)):
-                            temp+=data6+'"'+pm[i]+'"'+data6_1+","
-                            full=data6+"["+temp[:-1]+"]"+data7
-                            count+=1
-                        temp=""
-                        page+=1
-                        time.sleep(5)
-                        print user+" | page #"+str(page)+" | pm #"+str(count)+"/"+str(population)+" | "+time.strftime("%H:%M:%S")+"\n"
-                        act=download(_interact,full,sid)
-                        if "false" in act:
-                            print act
-                            safewarning(sid)
-                        full=""
-                        pm=[]
-                        notice(sid)
-                        antilog(sid)
-                        time.sleep(2)
-                    else:
-                        print "empty box \n"
-                        page+=1
-                print "field done"
-                print "--------------------------------------------------\n"
-                time.sleep(60)
-            else:
-                print user+" has been interacted already----- "
-        except:
-            print "--------ERROR!------------"+time.strftime("%H:%M:%S")
-            time.sleep(30)
-            pass
-        
+            print "Sleep mode "+time.strftime("%H:%M:%S")
+	    sleeptime=randint(2,4)
+	    print "Will sleep for "+str(sleeptime)+" hours."
+            time.sleep(60*60*sleeptime)
+	    print "Slept "+str(sleeptime)+" hour."+time.strftime("%H:%M:%S")
+	    if goal>=150000:
+		print "Goal is reset. "+time.strftime("%H:%M:%S")
+		goal=10000
+	    else:
+		goal+=randint(20000,30000)
     
 #===================================================================================
 #clear()
 #account
-sid='ptjo577elhmsb7t4m1jtkii1q1'
+sid='08uamffkib6m3rgl2h6gpu3f41'
 uid='xailabris'
 #(hunt: put pokemon name, or 'dexpm'-adopt random pm for dex, 'dexegg'-adopt random egg for dex)
-hunt='dexegg'
-#sid='7p7i2a1j1ma8vl2ch6pqllkmo3'
+hunt='Corsola'
+#hunt='dexegg'
 #=====================
-#field("Matkat",sid,0.95)
+#field("lado1139",sid,0.95)
 #antilog(sid)
 #checkparty(sid,uid,hunt)
 #checkinteraction(sid)
 #====================
 #main(sid,uid,hunt)
 pkrs(sid,uid,hunt)
-#dailydalao(sid)
